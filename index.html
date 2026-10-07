@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Painel de Gestão - Mercadinho Alves</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Vue 3 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Phosphor Icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0fdf4',
+                            100: '#dcfce7',
+                            500: '#22c55e',
+                            600: '#16a34a',
+                            700: '#15803d',
+                            800: '#166534',
+                            900: '#14532d',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        [v-cloak] { display: none; }
+        .fade-enter-active, .fade-leave-active { transition: opacity 0.3s ease; }
+        .fade-enter-from, .fade-leave-to { opacity: 0; }
+        .list-enter-active, .list-leave-active { transition: all 0.4s ease; }
+        .list-enter-from, .list-leave-to { opacity: 0; transform: translateX(-30px); }
+        
+        /* Custom Scrollbar */
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f5f5f4; border-radius: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #d6d3d1; border-radius: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #a8a29e; }
+        
+        /* Remove arrows/spinners from number inputs */
+        input[type=number]::-webkit-inner-spin-button, 
+        input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        input[type=number] { -moz-appearance: textfield; }
+    </style>
+</head>
+<body class="bg-stone-50 text-stone-800 font-sans min-h-screen p-4 md:p-8">
+    <div id="app" v-cloak class="max-w-7xl mx-auto space-y-6">
+        
+        <!-- Datalist para Autocomplete de Produtos -->
+        <datalist id="produtos-sugestoes">
+            <option v-for="prod in learnedProducts" :key="prod" :value="prod"></option>
+        </datalist>
+
+        <!-- Header -->
+        <header class="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 rounded-2xl shadow-sm border border-stone-100 gap-4">
+            <div>
+                <h1 class="text-3xl font-black tracking-tight text-stone-900 uppercase">
+                    MERCADINHO <span class="text-red-600">ALVES</span>
+                </h1>
+                <p class="text-sm text-stone-500 font-medium tracking-wide uppercase mt-1">Gestão de Vendas & Caixa</p>
+            </div>
+            <div class="flex items-center gap-2 text-stone-500">
+                <i class="ph ph-clock text-xl"></i>
+                <span class="font-medium text-sm">{{ currentTime }}</span>
+            </div>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            
+            <!-- LEFT COLUMN (Dashboard & Nova Venda) -->
+            <div class="lg:col-span-7 space-y-6">
+                
+                <!-- Dashboard Section -->
+                <section class="bg-white p-6 rounded-2xl shadow-sm border border-stone-100 flex flex-col md:flex-row gap-6">
+                    <div class="w-full md:w-1/2 space-y-5">
+                        <div>
+                            <h2 class="text-xs font-bold text-stone-400 uppercase tracking-widest mb-1">Visão Geral</h2>
+                            <h3 class="text-xl font-bold text-stone-800 leading-tight">Dashboard de Vendas</h3>
+                            <p class="text-xs text-stone-500 mt-1">Acompanhe o movimento do caixa hoje.</p>
+                        </div>
+                        
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="col-span-2 bg-brand-50 p-4 rounded-xl border border-brand-100 flex flex-col justify-center relative overflow-hidden">
+                                <div class="relative z-10">
+                                    <span class="text-xs font-bold text-brand-700 uppercase tracking-wide">Total Vendido</span>
+                                    <span class="text-3xl font-black text-brand-800 mt-1 block">{{ formatCurrency(stats.total) }}</span>
+                                    <span class="text-xs text-brand-600 mt-1 block">{{ sales.length }} vendas registradas</span>
+                                </div>
+                            </div>
+                            <div class="bg-stone-50 p-3 rounded-xl border border-stone-100">
+                                <span class="text-[10px] font-bold text-stone-500 uppercase tracking-wide block mb-1">Dinheiro</span>
+                                <span class="text-base font-bold text-stone-800">{{ formatCurrency(stats.dinheiro) }}</span>
+                            </div>
+                            <div class="bg-stone-50 p-3 rounded-xl border border-stone-100">
+                                <span class="text-[10px] font-bold text-stone-500 uppercase tracking-wide block mb-1">Cartão / Pix</span>
+                                <span class="text-base font-bold text-stone-800">{{ formatCurrency(stats.cartao + stats.pix) }}</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="w-full md:w-1/2 flex items-center justify-center relative min-h-[220px]">
+                        <canvas id="salesChart"></canvas>
+                        <div v-if="sales.length === 0" class="absolute inset-0 flex items-center justify-center bg-white/80 backdrop-blur-sm z-10 rounded-xl">
+                            <span class="text-sm font-medium text-stone-400">Nenhuma venda ainda</span>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Nova Venda Section -->
+                <section class="bg-white p-6 rounded-2xl shadow-sm border border-stone-100 space-y-6">
+                    <div>
+                        <h3 class="text-xl font-bold text-stone-800 leading-tight uppercase">Registrar Venda</h3>
+                        <p class="text-xs text-stone-500 mt-1">Adicione produtos e aceite pagamentos mistos.</p>
+                    </div>
+
+                    <!-- Lista de Produtos -->
+                    <div class="space-y-3">
+                        <TransitionGroup name="list" tag="div" class="space-y-3">
+                            <div v-for="(item, index) in currentItems" :key="item.id" class="flex gap-3 items-start">
+                                <div class="flex-grow">
+                                    <label v-if="index === 0" class="text-[10px] font-bold text-stone-500 uppercase tracking-wide block mb-1">Produto</label>
+                                    <input v-model="item.name" type="text" list="produtos-sugestoes" placeholder="Ex: Arroz, Biscoito..." class="w-full bg-stone-50 border border-stone-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 transition-all placeholder-stone-400">
+                                </div>
+                                <div class="w-32">
+                                    <label v-if="index === 0" class="text-[10px] font-bold text-stone-500 uppercase tracking-wide block mb-1">Valor (R$)</label>
+                                    <input v-model.number="item.price" type="number" step="0.01" min="0" placeholder="0,00" class="w-full bg-stone-50 border border-stone-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 transition-all placeholder-stone-400 font-medium">
+                                </div>
+                                <div class="pt-6" v-if="index === 0"></div>
+                                <button @click="removeItem(item.id)" class="mt-[2px] p-2 text-stone-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors" :class="{'mt-6': index === 0}">
+                                    <i class="ph ph-x text-lg"></i>
+                                </button>
+                            </div>
+                        </TransitionGroup>
+                        
+                        <button @click="addItem" class="w-full py-2.5 border-2 border-dashed border-stone-200 text-stone-500 rounded-xl text-sm font-bold uppercase hover:bg-stone-50 hover:border-stone-300 transition-all flex items-center justify-center gap-2 mt-2">
+                            <i class="ph ph-plus"></i> Adicionar outro produto
+                        </button>
+                    </div>
+
+                    <!-- Total -->
+                    <div class="bg-stone-100 rounded-xl p-4 flex justify-between items-center">
+                        <span class="text-sm font-bold text-stone-500 uppercase tracking-widest">Total da Compra</span>
+                        <span class="text-2xl font-black text-stone-800">{{ formatCurrency(totalSale) }}</span>
+                    </div>
+
+                    <!-- Pagamento e Troco -->
+                    <div class="space-y-4 pt-2 border-t border-stone-100">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            
+                            <!-- Pagamento Misto -->
+                            <div class="space-y-4">
+                                <div>
+                                    <label class="text-[10px] font-bold text-stone-500 uppercase tracking-wide block mb-3">Valores Recebidos (R$)</label>
+                                    
+                                    <div class="space-y-3">
+                                        <!-- Dinheiro -->
+                                        <div>
+                                            <div class="flex items-center gap-2">
+                                                <div class="w-9 h-9 rounded-full bg-brand-50 text-brand-600 flex items-center justify-center shrink-0" title="Dinheiro">
+                                                    <i class="ph ph-money text-lg"></i>
+                                                </div>
+                                                <div class="flex-grow relative">
+                                                    <input v-model.number="payments.dinheiro" type="number" step="0.01" min="0" placeholder="Dinheiro" class="w-full bg-white border border-stone-200 rounded-lg pl-3 pr-3 py-2 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-brand-500 transition-all text-stone-800">
+                                                </div>
+                                            </div>
+                                            <div class="flex gap-1.5 pl-11 flex-wrap mt-1.5">
+                                                <button @click="addDinheiro(5)" class="px-2 py-1 bg-stone-100 hover:bg-stone-200 rounded text-[10px] font-bold text-stone-600 transition-colors">+ R$ 5</button>
+                                                <button @click="addDinheiro(10)" class="px-2 py-1 bg-stone-100 hover:bg-stone-200 rounded text-[10px] font-bold text-stone-600 transition-colors">+ R$ 10</button>
+                                                <button @click="addDinheiro(50)" class="px-2 py-1 bg-stone-100 hover:bg-stone-200 rounded text-[10px] font-bold text-stone-600 transition-colors">+ R$ 50</button>
+                                                <button @click="addRestante('dinheiro')" class="px-2 py-1 bg-brand-50 text-brand-700 hover:bg-brand-100 rounded text-[10px] font-bold transition-colors ml-auto">Restante</button>
+                                            </div>
+                                        </div>
+
+                                        <!-- Cartão -->
+                                        <div class="flex items-center gap-2 pt-2 border-t border-stone-50">
+                                            <div class="w-9 h-9 rounded-full bg-blue-50 text-blue-500 flex items-center justify-center shrink-0" title="Cartão">
+                                                <i class="ph ph-credit-card text-lg"></i>
+                                            </div>
+                                            <div class="flex-grow">
+                                                <input v-model.number="payments.cartao" type="number" step="0.01" min="0" placeholder="Cartão" class="w-full bg-white border border-stone-200 rounded-lg px-3 py-2 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-brand-500 transition-all text-stone-800">
+                                            </div>
+                                            <button @click="addRestante('cartao')" class="px-2.5 py-2 bg-stone-100 hover:bg-stone-200 rounded-lg text-[10px] font-bold text-stone-600 transition-colors">Completar</button>
+                                        </div>
+
+                                        <!-- Pix -->
+                                        <div class="flex items-center gap-2">
+                                            <div class="w-9 h-9 rounded-full bg-violet-50 text-violet-500 flex items-center justify-center shrink-0" title="Pix">
+                                                <i class="ph ph-qr-code text-lg"></i>
+                                            </div>
+                                            <div class="flex-grow">
+                                                <input v-model.number="payments.pix" type="number" step="0.01" min="0" placeholder="Pix" class="w-full bg-white border border-stone-200 rounded-lg px-3 py-2 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-brand-500 transition-all text-stone-800">
+                                            </div>
+                                            <button @click="addRestante('pix')" class="px-2.5 py-2 bg-stone-100 hover:bg-stone-200 rounded-lg text-[10px] font-bold text-stone-600 transition-colors">Completar</button>
+                                        </div>
+                                        
+                                        <div class="flex justify-end pt-1">
+                                            <button @click="clearPayments" class="text-[11px] text-red-500 font-bold hover:underline">Zerar Entradas</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Resumo Inteligente (Troco/Falta) e Botão Finalizar -->
+                            <div class="flex flex-col justify-end space-y-4">
+                                <div class="rounded-xl p-5 text-white relative overflow-hidden shadow-md transition-colors duration-300" 
+                                     :class="{
+                                         'bg-stone-300': totalSale === 0,
+                                         'bg-red-600': missingAmount > 0 && totalReceived > 0,
+                                         'bg-brand-800': totalSale > 0 && !(missingAmount > 0 && totalReceived > 0)
+                                     }">
+                                    <!-- Background shape -->
+                                    <div class="absolute -right-6 -top-6 w-24 h-24 bg-white rounded-full opacity-10 blur-xl"></div>
+                                    
+                                    <div class="relative z-10 flex flex-col items-center justify-center text-center">
+                                        <span class="text-[10px] font-bold uppercase tracking-widest mb-1 text-white/80" v-if="totalReceived === 0 || totalSale === 0">
+                                            Total a Cobrar
+                                        </span>
+                                        <span class="text-[10px] font-bold uppercase tracking-widest mb-1 text-white/90" v-else-if="missingAmount > 0">
+                                            Faltam (Dinheiro Insuficiente)
+                                        </span>
+                                        <span class="text-[10px] font-bold uppercase tracking-widest mb-1 text-white/80" v-else>
+                                            Troco a Dar
+                                        </span>
+                                        
+                                        <span class="text-4xl font-black tracking-tight" :class="{'text-yellow-300': changeAmount > 0, 'text-white': missingAmount > 0 || totalSale === 0}">
+                                            <span v-if="totalReceived === 0 || totalSale === 0">{{ formatCurrency(totalSale) }}</span>
+                                            <span v-else-if="missingAmount > 0">{{ formatCurrency(missingAmount) }}</span>
+                                            <span v-else>{{ formatCurrency(changeAmount) }}</span>
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <button @click="registerSale" :disabled="totalSale === 0 || missingAmount > 0" class="w-full bg-brand-600 hover:bg-brand-700 disabled:bg-stone-300 disabled:text-stone-500 disabled:cursor-not-allowed text-white py-4 rounded-xl font-bold uppercase tracking-wider transition-all shadow-sm flex justify-center items-center gap-2">
+                                    <i class="ph ph-check-circle text-xl"></i> Finalizar Venda
+                                </button>
+                            </div>
+
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <!-- RIGHT COLUMN (Histórico) -->
+            <div class="lg:col-span-5 space-y-6">
+                <section class="bg-white p-6 rounded-2xl shadow-sm border border-stone-100 flex flex-col h-full max-h-[85vh]">
+                    <div class="flex justify-between items-center mb-6">
+                        <div>
+                            <h3 class="text-lg font-bold text-stone-800 uppercase leading-tight">Histórico</h3>
+                            <p class="text-[11px] text-stone-400 mt-0.5">Salvo localmente no seu aparelho</p>
+                        </div>
+                        <div class="flex gap-2">
+                            <button @click="exportData" class="px-3 py-1.5 bg-stone-100 hover:bg-stone-200 text-stone-600 rounded-lg text-xs font-bold uppercase transition-colors flex items-center gap-1">
+                                <i class="ph ph-file-text"></i> Salvar Relatório (.txt)
+                            </button>
+                            <button @click="clearHistory" class="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-xs font-bold uppercase transition-colors">
+                                Limpar
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Lista de Histórico -->
+                    <div class="flex-grow overflow-y-auto pr-2 space-y-3 custom-scrollbar">
+                        <div v-if="sales.length === 0" class="text-center py-10 text-stone-400 flex flex-col items-center">
+                            <i class="ph ph-receipt text-4xl mb-2 opacity-50"></i>
+                            <p class="text-sm">Nenhuma venda registrada ainda.</p>
+                        </div>
+
+                        <TransitionGroup name="list">
+                            <div v-for="sale in sales" :key="sale.id" class="p-4 border border-stone-100 rounded-xl bg-stone-50 hover:bg-white hover:shadow-sm transition-all flex flex-col">
+                                
+                                <div class="flex justify-between items-center mb-2 gap-2">
+                                    <div>
+                                        <span class="text-xs font-bold text-stone-400 flex items-center gap-1">
+                                            <i class="ph ph-calendar-blank"></i> {{ formatDate(sale.date) }}
+                                        </span>
+                                    </div>
+                                    <div class="flex items-center gap-3">
+                                        <span class="text-sm font-black text-stone-800">{{ formatCurrency(sale.total) }}</span>
+                                        <!-- Botão Excluir agora faz parte da linha (nunca sobrepõe) -->
+                                        <button @click="removeSale(sale.id)" class="text-stone-300 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-md transition-colors" title="Excluir Venda">
+                                            <i class="ph ph-trash text-lg"></i>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div class="text-xs text-stone-500 mb-2 font-medium">
+                                    <span v-for="(item, idx) in sale.items" :key="idx">
+                                        {{ item.name || 'Produto' }}<span v-if="idx < sale.items.length - 1">, </span>
+                                    </span>
+                                </div>
+
+                                <div class="flex flex-wrap gap-1.5 items-center border-t border-stone-200 pt-3 mt-1">
+                                    <!-- Compatibility for old format -->
+                                    <span v-if="sale.method" class="text-[10px] uppercase font-bold text-stone-500 bg-stone-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                        <i class="ph" :class="getMethodIcon(sale.method)"></i> {{ sale.method }}
+                                    </span>
+                                    
+                                    <!-- New Multiple Payment Format -->
+                                    <template v-if="sale.net">
+                                        <span v-if="sale.received.dinheiro > 0" class="text-[10px] uppercase font-bold text-brand-700 bg-brand-100 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                            <i class="ph ph-money"></i> {{ formatCurrency(sale.received.dinheiro) }}
+                                        </span>
+                                        <span v-if="sale.received.cartao > 0" class="text-[10px] uppercase font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                            <i class="ph ph-credit-card"></i> {{ formatCurrency(sale.received.cartao) }}
+                                        </span>
+                                        <span v-if="sale.received.pix > 0" class="text-[10px] uppercase font-bold text-violet-700 bg-violet-100 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                            <i class="ph ph-qr-code"></i> {{ formatCurrency(sale.received.pix) }}
+                                        </span>
+                                    </template>
+                                    
+                                    <span v-if="sale.change > 0" class="text-[11px] font-bold text-brand-600 ml-auto">
+                                        Troco: {{ formatCurrency(sale.change) }}
+                                    </span>
+                                </div>
+                            </div>
+                        </TransitionGroup>
+                    </div>
+                </section>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        const { createApp, ref, computed, onMounted, watch, onUnmounted } = Vue;
+
+        createApp({
+            setup() {
+                // Estado Principal
+                const sales = ref([]);
+                const currentItems = ref([{ id: Date.now(), name: '', price: null }]);
+                const payments = ref({ dinheiro: null, cartao: null, pix: null });
+                const currentTime = ref('');
+                let chartInstance = null;
+                let clockInterval = null;
+
+                // Base de Produtos Comuns
+                const commonProducts = [
+                    'Açúcar 1kg', 'Água Mineral', 'Amaciante', 'Arroz 1kg', 'Arroz 5kg', 'Biscoito Recheado',
+                    'Biscoito Salgado', 'Café 250g', 'Café 500g', 'Carne', 'Cerveja Lata', 'Cerveja Litrão',
+                    'Creme Dental', 'Desodorante', 'Detergente', 'Erva Mate', 'Farinha de Mandioca', 
+                    'Farinha de Trigo', 'Feijão 1kg', 'Frango', 'Leite Condensado', 'Leite em Pó', 
+                    'Leite Integral', 'Linguiça', 'Macarrão', 'Manteiga', 'Margarina', 'Molho de Tomate', 
+                    'Óleo de Soja', 'Ovos (Cartela)', 'Pão de Forma', 'Pão Francês', 'Papel Higiênico', 
+                    'Refrigerante 2L', 'Refrigerante Lata', 'Sabão em Barra', 'Sabão em Pó', 'Sabonete',
+                    'Salsicha', 'Shampoo', 'Suco de Caixinha', 'Suco em Pó'
+                ];
+
+                // Lifecycle
+                onMounted(() => {
+                    const saved = localStorage.getItem('mercadinho_pro_sales');
+                    if (saved) {
+                        try { sales.value = JSON.parse(saved); } catch (e) {}
+                    }
+                    initChart();
+                    updateTime();
+                    clockInterval = setInterval(updateTime, 1000);
+                });
+
+                onUnmounted(() => {
+                    clearInterval(clockInterval);
+                });
+
+                // Salvar automaticamente no LocalStorage
+                watch(sales, (newSales) => {
+                    localStorage.setItem('mercadinho_pro_sales', JSON.stringify(newSales));
+                    updateChart();
+                }, { deep: true });
+
+                // Computed Properties
+                
+                // Junta produtos da lista padrão com os que você já vendeu para aprender novos!
+                const learnedProducts = computed(() => {
+                    const productSet = new Set(commonProducts);
+                    sales.value.forEach(sale => {
+                        sale.items.forEach(item => {
+                            if (item.name) {
+                                productSet.add(item.name.trim());
+                            }
+                        });
+                    });
+                    return Array.from(productSet).sort();
+                });
+
+                const totalSale = computed(() => {
+                    return currentItems.value.reduce((sum, item) => sum + (Number(item.price) || 0), 0);
+                });
+                
+                const totalReceived = computed(() => {
+                    return (Number(payments.value.dinheiro) || 0) + 
+                           (Number(payments.value.cartao) || 0) + 
+                           (Number(payments.value.pix) || 0);
+                });
+
+                const missingAmount = computed(() => {
+                    const diff = totalSale.value - totalReceived.value;
+                    return diff > 0 ? diff : 0;
+                });
+
+                const changeAmount = computed(() => {
+                    const diff = totalReceived.value - totalSale.value;
+                    // Assumimos que o troco sai prioritariamente do que foi pago em dinheiro
+                    return diff > 0 ? diff : 0;
+                });
+
+                const stats = computed(() => {
+                    let total = 0, dinheiro = 0, cartao = 0, pix = 0;
+                    sales.value.forEach(sale => {
+                        total += sale.total;
+                        // Compatibilidade com vendas antigas salvas
+                        if (sale.method) {
+                            if (sale.method === 'Dinheiro') dinheiro += sale.total;
+                            if (sale.method === 'Cartão') cartao += sale.total;
+                            if (sale.method === 'Pix') pix += sale.total;
+                        } 
+                        // Vendas Novas Divididas
+                        else if (sale.net) {
+                            dinheiro += sale.net.dinheiro;
+                            cartao += sale.net.cartao;
+                            pix += sale.net.pix;
+                        }
+                    });
+                    return { total, dinheiro, cartao, pix };
+                });
+
+                // Métodos
+                const updateTime = () => {
+                    const now = new Date();
+                    currentTime.value = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) + ' - ' + now.toLocaleDateString('pt-BR');
+                };
+
+                const formatCurrency = (value) => {
+                    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
+                };
+
+                const formatDate = (isoString) => {
+                    const d = new Date(isoString);
+                    return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute:'2-digit' }) + ' - ' + d.toLocaleDateString('pt-BR');
+                };
+
+                const getMethodIcon = (method) => {
+                    if (method === 'Dinheiro') return 'ph-money';
+                    if (method === 'Cartão') return 'ph-credit-card';
+                    if (method === 'Pix') return 'ph-qr-code';
+                    return 'ph-wallet';
+                };
+
+                const addItem = () => {
+                    currentItems.value.push({ id: Date.now(), name: '', price: null });
+                };
+
+                const removeItem = (id) => {
+                    currentItems.value = currentItems.value.filter(item => item.id !== id);
+                    if(currentItems.value.length === 0) addItem(); 
+                };
+
+                const addDinheiro = (val) => {
+                    payments.value.dinheiro = (Number(payments.value.dinheiro) || 0) + val;
+                };
+
+                const addRestante = (method) => {
+                    if(missingAmount.value > 0) {
+                        const newVal = (Number(payments.value[method]) || 0) + missingAmount.value;
+                        payments.value[method] = Math.round(newVal * 100) / 100; // previne bugs de float
+                    }
+                };
+
+                const clearPayments = () => {
+                    payments.value = { dinheiro: null, cartao: null, pix: null };
+                };
+
+                const registerSale = () => {
+                    if (totalSale.value <= 0 || missingAmount.value > 0) return;
+                    
+                    const pDinheiro = Number(payments.value.dinheiro) || 0;
+                    const pCartao = Number(payments.value.cartao) || 0;
+                    const pPix = Number(payments.value.pix) || 0;
+                    
+                    let netDinheiro = pDinheiro - changeAmount.value;
+                    if(netDinheiro < 0) netDinheiro = 0; 
+                    
+                    const newSale = {
+                        id: Date.now(),
+                        date: new Date().toISOString(),
+                        items: currentItems.value.filter(i => i.price > 0).map(i => ({ name: i.name, price: Number(i.price) })),
+                        total: totalSale.value,
+                        received: {
+                            dinheiro: pDinheiro,
+                            cartao: pCartao,
+                            pix: pPix
+                        },
+                        net: {
+                            dinheiro: netDinheiro,
+                            cartao: pCartao,
+                            pix: pPix
+                        },
+                        change: changeAmount.value
+                    };
+
+                    sales.value.unshift(newSale); 
+
+                    // Reset
+                    currentItems.value = [{ id: Date.now(), name: '', price: null }];
+                    clearPayments();
+                };
+
+                const removeSale = (id) => {
+                    if (confirm('Tem certeza que deseja excluir esta venda específica? O gráfico e o fechamento serão ajustados.')) {
+                        sales.value = sales.value.filter(s => s.id !== id);
+                    }
+                };
+
+                const clearHistory = () => {
+                    if(sales.value.length === 0) return;
+                    if(confirm('Tem certeza que deseja apagar TODO o histórico de vendas? Esta ação não pode ser desfeita.')) {
+                        sales.value = [];
+                    }
+                };
+
+                const exportData = () => {
+                    if(sales.value.length === 0) {
+                        alert('Não há vendas para exportar.');
+                        return;
+                    }
+                    
+                    const div = '==============================================================\n';
+                    const sep = '--------------------------------------------------------------\n';
+                    
+                    let text = div;
+                    text += '           MERCADINHO ALVES - FECHAMENTO DE CAIXA\n';
+                    text += div;
+                    text += `Gerado em: ${currentTime.value}\n`;
+                    text += `Total de Vendas no Histórico: ${sales.value.length}\n`;
+                    text += sep;
+                    
+                    text += `[ RESUMO GERAL DO DIA ]\n\n`;
+                    text += `★ FATURAMENTO TOTAL: ${formatCurrency(stats.value.total)}\n\n`;
+                    text += `   - Entradas em Dinheiro: ${formatCurrency(stats.value.dinheiro)}\n`;
+                    text += `   - Entradas no Cartão:   ${formatCurrency(stats.value.cartao)}\n`;
+                    text += `   - Entradas no Pix:      ${formatCurrency(stats.value.pix)}\n`;
+                    text += div;
+                    
+                    text += `\n[ HISTÓRICO DETALHADO DE VENDAS ]\n\n`;
+                    
+                    sales.value.forEach((s, index) => {
+                        text += `VENDA #${sales.value.length - index} | Data: ${formatDate(s.date)}\n`;
+                        text += `TOTAL: ${formatCurrency(s.total)}\n`;
+                        
+                        let methodsStr = [];
+                        if (s.method) {
+                            methodsStr.push(`${s.method} (${formatCurrency(s.total)})`);
+                        } else if (s.net) {
+                            if (s.received.dinheiro > 0) methodsStr.push(`Dinheiro: ${formatCurrency(s.received.dinheiro)}`);
+                            if (s.received.cartao > 0) methodsStr.push(`Cartão: ${formatCurrency(s.received.cartao)}`);
+                            if (s.received.pix > 0) methodsStr.push(`Pix: ${formatCurrency(s.received.pix)}`);
+                        }
+                        
+                        text += `PAGAMENTO: ${methodsStr.join(' + ')}\n`;
+                        if (s.change > 0) {
+                            text += `TROCO DEVOLVIDO: ${formatCurrency(s.change)}\n`;
+                        }
+                        
+                        text += `PRODUTOS:\n`;
+                        s.items.forEach(i => {
+                            text += `   » ${i.name || 'Produto sem nome'} ........... ${formatCurrency(i.price)}\n`;
+                        });
+                        text += sep;
+                    });
+                    
+                    text += `\nFIM DO RELATÓRIO - MERCADINHO ALVES\n`;
+
+                    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = `Fechamento_Caixa_Mercadinho_${new Date().toISOString().slice(0,10)}.txt`;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    URL.revokeObjectURL(url);
+                };
+
+                const initChart = () => {
+                    const ctx = document.getElementById('salesChart').getContext('2d');
+                    
+                    Chart.defaults.font.family = "'Inter', 'sans-serif'";
+                    Chart.defaults.color = '#78716c';
+
+                    chartInstance = new Chart(ctx, {
+                        type: 'doughnut',
+                        data: getChartData(),
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            cutout: '75%', 
+                            animation: { 
+                                animateScale: true, 
+                                animateRotate: true,
+                                duration: 800,
+                                easing: 'easeOutQuart'
+                            },
+                            plugins: {
+                                legend: { 
+                                    position: 'right',
+                                    labels: {
+                                        usePointStyle: true,
+                                        padding: 20,
+                                        boxWidth: 8
+                                    }
+                                },
+                                tooltip: {
+                                    backgroundColor: '#1c1917',
+                                    padding: 12,
+                                    cornerRadius: 8,
+                                    callbacks: {
+                                        label: function(context) {
+                                            let label = context.label || '';
+                                            if (label) { label += ': '; }
+                                            if (context.parsed !== null) {
+                                                label += new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(context.parsed);
+                                            }
+                                            return label;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    });
+                };
+
+                const updateChart = () => {
+                    if (chartInstance) {
+                        chartInstance.data = getChartData();
+                        chartInstance.update();
+                    }
+                };
+
+                const getChartData = () => {
+                    return {
+                        labels: ['Dinheiro', 'Cartão', 'Pix'],
+                        datasets: [{
+                            data: [stats.value.dinheiro, stats.value.cartao, stats.value.pix],
+                            backgroundColor: [
+                                '#16a34a', // brand-600
+                                '#3b82f6', // blue-500
+                                '#8b5cf6'  // violet-500
+                            ],
+                            borderWidth: 0,
+                            hoverOffset: 6
+                        }]
+                    };
+                };
+
+                return {
+                    sales, currentItems, payments, currentTime, learnedProducts,
+                    totalSale, totalReceived, missingAmount, changeAmount, stats,
+                    formatCurrency, formatDate, getMethodIcon,
+                    addItem, removeItem, addDinheiro, addRestante, clearPayments,
+                    registerSale, removeSale, clearHistory, exportData
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
